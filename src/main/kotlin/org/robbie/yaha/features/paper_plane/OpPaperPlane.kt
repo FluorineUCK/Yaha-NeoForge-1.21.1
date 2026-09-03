@@ -10,8 +10,8 @@ import at.petrak.hexcasting.api.casting.getVec3
 import at.petrak.hexcasting.api.casting.iota.EntityIota
 import at.petrak.hexcasting.api.casting.iota.Iota
 import at.petrak.hexcasting.api.misc.MediaConstants
-import net.minecraft.entity.Entity
-import net.minecraft.util.math.Vec3d
+import net.minecraft.world.entity.Entity
+import net.minecraft.world.phys.Vec3
 
 object OpPaperPlane : SpellAction {
     override val argc = 2
@@ -22,7 +22,7 @@ object OpPaperPlane : SpellAction {
     ): SpellAction.Result {
         val pos = args.getVec3(0, argc)
         env.assertVecInRange(pos)
-        val entity = args.getEntity(1, argc)
+        val entity = args.getEntity(env.world, 1, argc)
         env.assertEntityInRange(entity)
         return SpellAction.Result(
             Spell(pos, entity),
@@ -31,7 +31,7 @@ object OpPaperPlane : SpellAction {
         )
     }
 
-    private data class Spell(val pos: Vec3d, val entity: Entity) : RenderedSpell {
+    private data class Spell(val pos: Vec3, val entity: Entity) : RenderedSpell {
         override fun cast(env: CastingEnvironment) {}
         override fun cast(env: CastingEnvironment, image: CastingImage): CastingImage {
             val plane = PaperPlaneEntity(
@@ -40,8 +40,8 @@ object OpPaperPlane : SpellAction {
                 entity,
                 pos
             )
-            env.world.spawnEntity(plane)
-            return image.copy(stack = image.stack.toList().plus(EntityIota(plane)))
+            env.world.addFreshEntity(plane)
+            return image.copy(stack = image.stack.appended(EntityIota(plane)))
         }
     }
 }

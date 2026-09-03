@@ -13,6 +13,6 @@ object OpTimeBombPos : ConstMediaAction {
         env: CastingEnvironment
     ): List<Iota> {
         if (env !is TimeBombCastEnv) throw MishapNoTimeBomb()
-        return env.getBomb().pos.asActionResult
+        return env.getBomb().position().asActionResult
     }
 }

@@ -1,40 +1,40 @@
 package org.robbie.yaha.client.features.paper_plane
 
-import net.minecraft.client.render.OverlayTexture
-import net.minecraft.client.render.RenderLayer
-import net.minecraft.client.render.VertexConsumer
-import net.minecraft.client.render.VertexConsumerProvider
-import net.minecraft.client.render.entity.EntityRenderer
-import net.minecraft.client.render.entity.EntityRendererFactory
-import net.minecraft.client.util.math.MatrixStack
-import net.minecraft.util.math.BlockPos
-import net.minecraft.util.math.MathHelper
-import net.minecraft.util.math.RotationAxis
+import net.minecraft.client.renderer.texture.OverlayTexture
+import net.minecraft.client.renderer.RenderType
+import com.mojang.blaze3d.vertex.VertexConsumer
+import net.minecraft.client.renderer.MultiBufferSource
+import net.minecraft.client.renderer.entity.EntityRenderer
+import net.minecraft.client.renderer.entity.EntityRendererProvider
+import com.mojang.blaze3d.vertex.PoseStack
+import net.minecraft.core.BlockPos
+import net.minecraft.util.Mth
+import com.mojang.math.Axis
 import org.joml.Matrix3f
 import org.joml.Matrix4f
 import org.robbie.yaha.Yaha
 import org.robbie.yaha.features.paper_plane.PaperPlaneEntity
 
-class PaperPlaneEntityRenderer(context: EntityRendererFactory.Context) : EntityRenderer<PaperPlaneEntity>(context) {
+class PaperPlaneEntityRenderer(context: EntityRendererProvider.Context) : EntityRenderer<PaperPlaneEntity>(context) {
     override fun render(
         entity: PaperPlaneEntity,
         yaw: Float,
         tickDelta: Float,
-        matrices: MatrixStack,
-        vertexConsumers: VertexConsumerProvider,
+        matrices: PoseStack,
+        vertexConsumers: MultiBufferSource,
         light: Int
     ) {
-        matrices.push()
-        matrices.multiply(RotationAxis.NEGATIVE_Y.rotationDegrees(MathHelper.lerp(tickDelta, entity.prevYaw, entity.yaw)))
-        matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(MathHelper.lerp(tickDelta, entity.prevPitch, entity.pitch)))
+        matrices.pushPose()
+        matrices.mulPose(Axis.YN.rotationDegrees(Mth.lerp(tickDelta, entity.yRotO, entity.yRot)))
+        matrices.mulPose(Axis.XP.rotationDegrees(Mth.lerp(tickDelta, entity.xRotO, entity.xRot)))
         matrices.scale(0.9f/16f, 0.9f/16f, 0.9f/16f)
         matrices.translate(0f, 0f, -4f)
 
-        val vertexConsumer = vertexConsumers.getBuffer(RenderLayer.getEntityCutout(getTexture(entity)))
+        val vertexConsumer = vertexConsumers.getBuffer(RenderType.entityCutout(getTextureLocation(entity)))
 
-        val entry = matrices.peek()
-        val posMat = entry.positionMatrix
-        val normMat = entry.normalMatrix
+        val entry = matrices.last()
+        val posMat = entry.pose()
+        val normMat = entry.normal()
 
         vertex(posMat, normMat, vertexConsumer, -4, 0, -8, 0f, 0.5f, 0, 1, 0, light)
         vertex(posMat, normMat, vertexConsumer, -4, 0, 8, 1f, 0.5f, 0, 1, 0, light)
@@ -56,7 +56,7 @@ class PaperPlaneEntityRenderer(context: EntityRendererFactory.Context) : EntityR
         vertex(posMat, normMat, vertexConsumer, 0, 0, 8, 1f, 0.5f, -1, 0, 0, light)
         vertex(posMat, normMat, vertexConsumer, 0, 0, -8, 0f, 0.5f, -1, 0, 0, light)
 
-        matrices.pop()
+        matrices.popPose()
         super.render(entity, yaw, tickDelta, matrices, vertexConsumers, light)
     }
 
@@ -69,15 +69,14 @@ class PaperPlaneEntityRenderer(context: EntityRendererFactory.Context) : EntityR
         normalX: Int, normalY: Int, normalZ: Int,
         light: Int
     ) {
-        vertexConsumer.vertex(positionMatrix, x.toFloat(), y.toFloat(), z.toFloat())
-            .color(255, 255, 255, 255)
-            .texture(u, v)
-            .overlay(OverlayTexture.DEFAULT_UV)
-            .light(light)
-            .normal(normalMatrix, normalX.toFloat(), normalY.toFloat(), normalZ.toFloat())
-            .next()
+        vertexConsumer.addVertex(positionMatrix, x.toFloat(), y.toFloat(), z.toFloat())
+            .setColor(255, 255, 255, 255)
+            .setUv(u, v)
+            .setOverlay(OverlayTexture.NO_OVERLAY)
+            .setLight(light)
+            .setNormal(normalX.toFloat(), normalY.toFloat(), normalZ.toFloat())
     }
 
-    override fun getTexture(entity: PaperPlaneEntity) = Yaha.id("textures/entity/paper_plane.png")
-    override fun getBlockLight(entity: PaperPlaneEntity, pos: BlockPos) = 15
+    override fun getTextureLocation(entity: PaperPlaneEntity) = Yaha.id("textures/entity/paper_plane.png")
+    override fun getBlockLightLevel(entity: PaperPlaneEntity, pos: BlockPos) = 15
 }

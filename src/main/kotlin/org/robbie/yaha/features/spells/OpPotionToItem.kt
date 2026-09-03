@@ -12,40 +12,43 @@ import at.petrak.hexcasting.api.casting.iota.EntityIota
 import at.petrak.hexcasting.api.casting.iota.Iota
 import at.petrak.hexcasting.api.casting.mishaps.MishapBadEntity
 import at.petrak.hexcasting.api.misc.MediaConstants
-import net.minecraft.entity.ItemEntity
-import net.minecraft.entity.projectile.thrown.EggEntity
-import net.minecraft.entity.projectile.thrown.ExperienceBottleEntity
-import net.minecraft.entity.projectile.thrown.PotionEntity
-import net.minecraft.entity.projectile.thrown.ThrownItemEntity
-import net.minecraft.server.network.ServerPlayerEntity
+import net.minecraft.core.registries.Registries
+import net.minecraft.nbt.CompoundTag
+import net.minecraft.tags.TagKey
+import net.minecraft.world.entity.EntityType
+import net.minecraft.world.entity.item.ItemEntity
+import net.minecraft.world.entity.projectile.ThrowableItemProjectile
+import net.minecraft.server.level.ServerPlayer
+import org.robbie.yaha.Yaha
 import org.robbie.yaha.features.time_bomb.TimeBombCastEnv
 import org.robbie.yaha.features.time_bomb.TimeBombEntity
 import org.robbie.yaha.registry.YahaCriteria
 
-// TODO: make this not hardcoded
 object OpPotionToItem : SpellAction {
+    private val PLUCKABLE_PROJECTILES: TagKey<EntityType<*>> =
+        TagKey.create(Registries.ENTITY_TYPE, Yaha.id("potion_to_item"))
+
     override val argc = 1
 
     override fun execute(
         args: List<Iota>,
         env: CastingEnvironment
     ): SpellAction.Result {
-        val entity = args.getEntity(0, argc)
+        val entity = args.getEntity(env.world, 0, argc)
+        val projectile = entity as? ThrowableItemProjectile
 
         if (
-            entity !is PotionEntity &&
-            entity !is EggEntity &&
-            entity !is ExperienceBottleEntity &&
-            entity !is TimeBombEntity ||
-            entity.owner != env.castingEntity
+            projectile == null ||
+            !entity.type.`is`(PLUCKABLE_PROJECTILES) ||
+            !isOwnedByCaster(projectile, env)
         ) throw MishapBadEntity.of(entity, "yaha:potion")
 
         env.assertEntityInRange(entity)
 
         return SpellAction.Result(
-            Spell(entity),
+            Spell(projectile),
             MediaConstants.CRYSTAL_UNIT,
-            listOf(ParticleSpray.cloud(entity.pos, 1.0))
+            listOf(ParticleSpray.cloud(entity.position(), 1.0))
         )
     }
 
@@ -62,29 +65,30 @@ object OpPotionToItem : SpellAction {
     ): OperationResult {
         // jank levels spiking!!
         val stackTop = image.stack.lastOrNull()
+        val stackEntity = (stackTop as? EntityIota)?.getEntity(env.world)
         val isBomb = (
                 stackTop is EntityIota &&
-                stackTop.entity is TimeBombEntity
+                stackEntity is TimeBombEntity
                 )
         val isSelfCast = (
                 isBomb &&
                 env is TimeBombCastEnv &&
-                env.getBomb() == stackTop.entity
+                env.getBomb() == stackEntity
                 )
 
         val opResult = super.operate(env, image, continuation)
 
-        if (env.castingEntity is ServerPlayerEntity && isBomb)
-            YahaCriteria.BOMB_DEFUSAL.trigger(env.castingEntity as ServerPlayerEntity)
+        if (env.castingEntity is ServerPlayer && isBomb)
+            YahaCriteria.BOMB_DEFUSAL.trigger(env.castingEntity as ServerPlayer)
 
         return if (!isSelfCast) opResult else opResult.copy(newContinuation = SpellContinuation.Done)
     }
 
-    private data class Spell(val potion: ThrownItemEntity) : RenderedSpell {
+    private data class Spell(val potion: ThrowableItemProjectile) : RenderedSpell {
         override fun cast(env: CastingEnvironment) {
-            val pos = potion.pos
-            val vel = potion.velocity
-            val item = potion.stack
+            val pos = potion.position()
+            val vel = potion.deltaMovement
+            val item = potion.item
             potion.discard()
             val itemEntity = ItemEntity(
                 env.world,
@@ -92,8 +96,19 @@ object OpPotionToItem : SpellAction {
                 item,
                 vel.x, vel.y, vel.z
             )
-            itemEntity.setToDefaultPickupDelay()
-            env.world.spawnEntity(itemEntity)
+            itemEntity.setDefaultPickUpDelay()
+            env.world.addFreshEntity(itemEntity)
         }
+    }
+
+    private fun isOwnedByCaster(projectile: ThrowableItemProjectile, env: CastingEnvironment): Boolean {
+        val caster = env.castingEntity ?: return false
+        if (projectile.owner == caster) {
+            return true
+        }
+
+        val tag = CompoundTag()
+        projectile.saveWithoutId(tag)
+        return tag.hasUUID("Owner") && tag.getUUID("Owner") == caster.uuid
     }
 }

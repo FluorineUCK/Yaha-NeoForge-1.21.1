@@ -1,0 +1,55 @@
+modLoader = "javafml"
+loaderVersion = "[4,)"
+license = "MIT"
+
+[[mods]]
+modId = "yaha"
+version = "${version}"
+displayName = "YAHA"
+logoFile = "assets/yaha/icon.png"
+authors = "TheRobbie73"
+description = '''
+Yet Another Hex Addon.
+'''
+
+[[mixins]]
+config = "yaha.mixins.json"
+
+[[mixins]]
+config = "yaha.client.mixins.json"
+
+[[dependencies.yaha]]
+modId = "neoforge"
+type = "required"
+versionRange = "[21.1.111,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.yaha]]
+modId = "minecraft"
+type = "required"
+versionRange = "[1.21.1,1.21.2)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.yaha]]
+modId = "architectury"
+type = "required"
+versionRange = "[13.0.8,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.yaha]]
+modId = "kotlinforforge"
+type = "required"
+versionRange = "[5.5.0,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.yaha]]
+modId = "hexcasting"
+type = "required"
+versionRange = "[0.12.0-devel-pre-35,)"
+
+ordering = "AFTER"
+side = "BOTH"

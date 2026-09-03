@@ -8,7 +8,7 @@ import at.petrak.hexcasting.api.casting.getEntity
 import at.petrak.hexcasting.api.casting.iota.Iota
 import at.petrak.hexcasting.api.casting.mishaps.MishapBadEntity
 import at.petrak.hexcasting.api.misc.MediaConstants
-import net.minecraft.entity.decoration.ArmorStandEntity
+import net.minecraft.world.entity.decoration.ArmorStand
 import org.robbie.yaha.mixin.accessors.ArmorStandAccessor
 
 class OpStandToggle(val toggle: Toggle) : SpellAction {
@@ -18,22 +18,22 @@ class OpStandToggle(val toggle: Toggle) : SpellAction {
         args: List<Iota>,
         env: CastingEnvironment
     ): SpellAction.Result {
-        val armorStand = args.getEntity(0, argc)
+        val armorStand = args.getEntity(env.world, 0, argc)
         env.assertEntityInRange(armorStand)
-        if (armorStand !is ArmorStandEntity) throw MishapBadEntity.of(armorStand, "yaha:armor_stand")
+        if (armorStand !is ArmorStand) throw MishapBadEntity.of(armorStand, "yaha:armor_stand")
         return SpellAction.Result(
             Spell(armorStand, toggle),
             MediaConstants.DUST_UNIT / 8,
-            listOf(ParticleSpray.cloud(armorStand.pos, 1.0))
+            listOf(ParticleSpray.cloud(armorStand.position(), 1.0))
         )
     }
 
-    private data class Spell(val armorStand: ArmorStandEntity, val toggle: Toggle) : RenderedSpell {
+    private data class Spell(val armorStand: ArmorStand, val toggle: Toggle) : RenderedSpell {
         override fun cast(env: CastingEnvironment) {
             armorStand.apply {
                 when (toggle) {
-                    Toggle.SHOW_ARMS -> setShowArms(!shouldShowArms())
-                    Toggle.HIDE_BASEPLATE -> setHideBasePlate(!shouldHideBasePlate())
+                    Toggle.SHOW_ARMS -> setShowArms(!isShowArms)
+                    Toggle.HIDE_BASEPLATE -> setNoBasePlate(!isNoBasePlate)
                     Toggle.MAKE_SMALL -> (this as ArmorStandAccessor).yaha_setSmall(!isSmall)
                 }
             }

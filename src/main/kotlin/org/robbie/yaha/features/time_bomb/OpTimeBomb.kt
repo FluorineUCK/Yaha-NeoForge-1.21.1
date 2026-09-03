@@ -2,7 +2,6 @@ package org.robbie.yaha.features.time_bomb
 
 import at.petrak.hexcasting.api.casting.ParticleSpray
 import at.petrak.hexcasting.api.casting.RenderedSpell
-import at.petrak.hexcasting.api.casting.SpellList
 import at.petrak.hexcasting.api.casting.castables.SpellAction
 import at.petrak.hexcasting.api.casting.eval.CastingEnvironment
 import at.petrak.hexcasting.api.casting.eval.vm.CastingImage
@@ -13,7 +12,8 @@ import at.petrak.hexcasting.api.casting.getVec3
 import at.petrak.hexcasting.api.casting.iota.EntityIota
 import at.petrak.hexcasting.api.casting.iota.Iota
 import at.petrak.hexcasting.api.misc.MediaConstants
-import net.minecraft.util.math.Vec3d
+import at.petrak.hexcasting.api.utils.TreeList
+import net.minecraft.world.phys.Vec3
 
 object OpTimeBomb : SpellAction {
     override val argc = 4
@@ -34,7 +34,7 @@ object OpTimeBomb : SpellAction {
         )
     }
 
-    private data class Spell(val pos: Vec3d, val hex: SpellList, val media: Long, val lifetime: Int) : RenderedSpell {
+    private data class Spell(val pos: Vec3, val hex: TreeList<Iota>, val media: Long, val lifetime: Int) : RenderedSpell {
         override fun cast(env: CastingEnvironment) {}
         override fun cast(env: CastingEnvironment, image: CastingImage): CastingImage? {
             val bomb = TimeBombEntity(
@@ -46,8 +46,8 @@ object OpTimeBomb : SpellAction {
                 lifetime,
                 pos
             )
-            env.world.spawnEntity(bomb)
-            return image.copy(stack = image.stack.toList().plus(EntityIota(bomb)))
+            env.world.addFreshEntity(bomb)
+            return image.copy(stack = image.stack.appended(EntityIota(bomb)))
         }
     }
 }

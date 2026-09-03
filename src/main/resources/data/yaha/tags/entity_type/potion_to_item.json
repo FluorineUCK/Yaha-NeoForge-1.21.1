@@ -1,0 +1,9 @@
+{
+  "replace": false,
+  "values": [
+    "minecraft:potion",
+    "minecraft:egg",
+    "minecraft:experience_bottle",
+    "yaha:time_bomb"
+  ]
+}

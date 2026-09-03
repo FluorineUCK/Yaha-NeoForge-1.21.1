@@ -5,18 +5,18 @@ import at.petrak.hexcasting.api.casting.eval.CastResult
 import at.petrak.hexcasting.api.casting.eval.CastingEnvironment
 import at.petrak.hexcasting.api.casting.eval.sideeffects.OperatorSideEffect
 import at.petrak.hexcasting.api.pigment.FrozenPigment
-import net.minecraft.entity.LivingEntity
-import net.minecraft.item.ItemStack
-import net.minecraft.server.network.ServerPlayerEntity
-import net.minecraft.server.world.ServerWorld
-import net.minecraft.text.Text
-import net.minecraft.util.Hand
-import net.minecraft.util.math.BlockPos
-import net.minecraft.util.math.Vec3d
-import net.minecraft.world.GameMode
+import net.minecraft.world.entity.LivingEntity
+import net.minecraft.world.item.ItemStack
+import net.minecraft.server.level.ServerPlayer
+import net.minecraft.server.level.ServerLevel
+import net.minecraft.network.chat.Component
+import net.minecraft.world.InteractionHand
+import net.minecraft.core.BlockPos
+import net.minecraft.world.phys.Vec3
+import net.minecraft.world.level.GameType
 import java.util.function.Predicate
 
-class TimeBombCastEnv(world: ServerWorld?, private val bomb: TimeBombEntity) : CastingEnvironment(world) {
+class TimeBombCastEnv(world: ServerLevel, private val bomb: TimeBombEntity) : CastingEnvironment(world) {
     private val AMBIT = 8.0
     private val player = bomb.owner as LivingEntity?
 
@@ -26,64 +26,67 @@ class TimeBombCastEnv(world: ServerWorld?, private val bomb: TimeBombEntity) : C
 
     override fun postExecution(result: CastResult?) {
         super.postExecution(result)
-        if (player !is ServerPlayerEntity || result == null) return
+        if (player !is ServerPlayer || result == null) return
 
         for (sideEffect in result.sideEffects) if (sideEffect is OperatorSideEffect.DoMishap) {
             val msg = sideEffect.mishap.errorMessageWithName(this, sideEffect.errorCtx)
-            printMessage(msg)
+            msg?.let(::printMessage)
         }
     }
 
-    override fun mishapSprayPos(): Vec3d = bomb.pos
+    override fun mishapSprayPos(): Vec3 = bomb.position()
 
     override fun extractMediaEnvironment(cost: Long, simulate: Boolean): Long {
-        val remainder = cost - bomb.getMedia()
-        if (!simulate) bomb.setMedia(-remainder)
-        return remainder
+        val extracted = minOf(cost, bomb.getMedia())
+        if (!simulate) bomb.setMedia(bomb.getMedia() - extracted)
+        return cost - extracted
     }
 
-    override fun isVecInRangeEnvironment(vec: Vec3d) =
-        vec.squaredDistanceTo(bomb.pos) <= AMBIT * AMBIT + 0.00000000001
+    override fun isVecInRangeEnvironment(vec: Vec3) =
+        vec.distanceToSqr(bomb.position()) <= AMBIT * AMBIT + 0.00000000001
 
-    override fun hasEditPermissionsAtEnvironment(pos: BlockPos?): Boolean {
-        if (player !is ServerPlayerEntity) return false
-        return player.interactionManager.gameMode != GameMode.ADVENTURE && world.canPlayerModifyAt(player, pos)
+    override fun hasEditPermissionsAtEnvironment(pos: BlockPos): Boolean {
+        if (player !is ServerPlayer) return false
+        return player.gameMode.gameModeForPlayer != GameType.ADVENTURE && player.mayInteract(world, pos)
     }
 
-    override fun getCastingHand() = Hand.MAIN_HAND
+    override fun getCastingHand() = InteractionHand.MAIN_HAND
 
-    override fun getUsableStacks(mode: StackDiscoveryMode?): List<ItemStack?>? {
-        if (player !is ServerPlayerEntity) return mutableListOf()
+    override fun getUsableStacks(mode: StackDiscoveryMode): List<ItemStack> {
+        if (player !is ServerPlayer) return mutableListOf()
         return getUsableStacksForPlayer(mode, null, player)
     }
 
-    override fun getPrimaryStacks(): List<HeldItemInfo?>? {
-        if (player !is ServerPlayerEntity) return mutableListOf()
+    override fun getPrimaryStacks(): List<HeldItemInfo> {
+        if (player !is ServerPlayer) return mutableListOf()
         return getPrimaryStacksForPlayer(castingHand, player)
     }
 
     override fun replaceItem(
-        stackOk: Predicate<ItemStack?>?,
+        stackOk: Predicate<ItemStack>?,
         replaceWith: ItemStack?,
-        hand: Hand?
+        hand: InteractionHand?
     ): Boolean {
-        if (player !is ServerPlayerEntity) return false
+        if (player !is ServerPlayer) return false
         return  replaceItemForPlayer(stackOk, replaceWith, hand, player)
     }
 
     override fun getPigment(): FrozenPigment = bomb.pigment
 
-    override fun setPigment(pigment: FrozenPigment?) = null
-
-    override fun produceParticles(
-        particles: ParticleSpray?,
-        colorizer: FrozenPigment?
-    ) {
-        particles?.sprayParticles(world, pigment)
+    override fun setPigment(pigment: FrozenPigment?): FrozenPigment? {
+        if (pigment != null) bomb.pigment = pigment
+        return pigment
     }
 
-    override fun printMessage(message: Text?) {
-        if (player is ServerPlayerEntity) player.sendMessage(message)
+    override fun produceParticles(
+        particles: ParticleSpray,
+        colorizer: FrozenPigment
+    ) {
+        particles.sprayParticles(world, colorizer)
+    }
+
+    override fun printMessage(message: Component) {
+        if (player is ServerPlayer) player.sendSystemMessage(message)
     }
 
     fun getBomb() = bomb

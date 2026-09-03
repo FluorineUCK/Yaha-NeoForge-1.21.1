@@ -1,7 +1,7 @@
 package org.robbie.yaha.features.bundles
 
-import net.minecraft.client.item.TooltipData
-import net.minecraft.item.ItemStack
-import net.minecraft.util.collection.DefaultedList
+import net.minecraft.world.inventory.tooltip.TooltipComponent
+import net.minecraft.world.item.ItemStack
+import net.minecraft.core.NonNullList
 
-data class IotaBundleTooltipData(val inventory: DefaultedList<ItemStack>) : TooltipData
+data class IotaBundleTooltipData(val inventory: NonNullList<ItemStack>) : TooltipComponent

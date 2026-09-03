@@ -1,27 +1,27 @@
 package org.robbie.yaha.client.features.bundles
 
-import net.minecraft.client.font.TextRenderer
-import net.minecraft.client.gui.DrawContext
-import net.minecraft.client.gui.tooltip.TooltipComponent
-import net.minecraft.client.item.TooltipData
+import net.minecraft.client.gui.Font
+import net.minecraft.client.gui.GuiGraphics
+import net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipComponent
+import net.minecraft.world.inventory.tooltip.TooltipComponent
 import org.robbie.yaha.Yaha
 import org.robbie.yaha.features.bundles.IotaBundleTooltipData
 
 val TEXTURE = Yaha.id("textures/gui/container/bundles.png")
 
-class IotaBundleTooltipComponent(data: IotaBundleTooltipData) : TooltipComponent {
+class IotaBundleTooltipComponent(data: IotaBundleTooltipData) : ClientTooltipComponent {
     val inventory = data.inventory
 
-    override fun drawItems(textRenderer: TextRenderer, x: Int, y: Int, context: DrawContext) {
+    override fun renderImage(textRenderer: Font, x: Int, y: Int, context: GuiGraphics) {
         drawSlots(x, y, context)
         drawItems(x, y, context, textRenderer)
         drawSelected(x, y, context, textRenderer)
     }
 
-    private fun drawSlots(x: Int, y: Int, drawContext: DrawContext) {
+    private fun drawSlots(x: Int, y: Int, drawContext: GuiGraphics) {
         repeat(getRows().coerceAtLeast(1)) { i ->
             repeat(4) { j ->
-                drawContext.drawTexture(
+                drawContext.blit(
                     TEXTURE,
                     x + j * 18 + 4,
                     y + i * 18 + 4,
@@ -34,23 +34,23 @@ class IotaBundleTooltipComponent(data: IotaBundleTooltipData) : TooltipComponent
         }
     }
 
-    private fun drawItems(x: Int, y: Int, drawContext: DrawContext, textRenderer: TextRenderer) {
+    private fun drawItems(x: Int, y: Int, drawContext: GuiGraphics, textRenderer: Font) {
         for ((idx, itemStack) in inventory.withIndex()) {
             val i = x + idx.rem(4) * 18 + 5
             val j = y + idx.floorDiv(4) * 18 + 5
-            drawContext.drawItem(itemStack, i, j)
-            drawContext.drawItemInSlot(textRenderer, itemStack, i, j)
+            drawContext.renderItem(itemStack, i, j)
+            drawContext.renderItemDecorations(textRenderer, itemStack, i, j)
         }
     }
 
-    private fun drawSelected(x: Int, y: Int, drawContext: DrawContext, textRenderer: TextRenderer) {
+    private fun drawSelected(x: Int, y: Int, drawContext: GuiGraphics, textRenderer: Font) {
         if (getRows() == 0) return
         val selected = IotaBundleTooltipHandler.selected
 
         val i = x + selected.rem(4) * 18 + 1
         val j = y + selected.floorDiv(4) * 18
 
-        drawContext.drawTexture(
+        drawContext.blit(
             TEXTURE,
             i, j, 0,
             0f, 18f,
@@ -59,17 +59,17 @@ class IotaBundleTooltipComponent(data: IotaBundleTooltipData) : TooltipComponent
         )
 
         val item = inventory.getOrNull(selected) ?: return
-        drawContext.drawItemTooltip(textRenderer, item, i + 20, j + 20)
+        drawContext.renderTooltip(textRenderer, item, i + 20, j + 20)
     }
 
     override fun getHeight() = getRows().coerceAtLeast(1) * 18 + 8
-    override fun getWidth(textRenderer: TextRenderer) = 4 * 18 + 8
+    override fun getWidth(textRenderer: Font) = 4 * 18 + 8
 
     // no Int.ceilDiv :pensive:
     private fun getRows() = inventory.size.floorDiv(4) + if (inventory.size.rem(4) != 0) 1 else 0
 
     companion object {
-        fun of(data: TooltipData): TooltipComponent? {
+        fun of(data: TooltipComponent): ClientTooltipComponent? {
             if (data !is IotaBundleTooltipData) return null
             return IotaBundleTooltipComponent(data)
         }

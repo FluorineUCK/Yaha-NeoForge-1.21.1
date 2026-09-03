@@ -14,7 +14,7 @@ object OpPaperPlaneTarget : ConstMediaAction {
         args: List<Iota>,
         env: CastingEnvironment
     ): List<Iota> {
-        val entity = args.getEntity(0, argc)
+        val entity = args.getEntity(env.world, 0, argc)
         val plane = entity as? PaperPlaneEntity
             ?: throw MishapBadEntity.of(entity, "yaha:paper_plane")
         env.assertEntityInRange(plane)

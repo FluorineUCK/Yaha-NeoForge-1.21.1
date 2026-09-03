@@ -13,28 +13,26 @@ import at.petrak.hexcasting.api.utils.hasList
 import at.petrak.hexcasting.api.utils.hasLong
 import at.petrak.hexcasting.api.utils.putCompound
 import at.petrak.hexcasting.api.utils.putList
-import net.minecraft.entity.Entity
-import net.minecraft.entity.EntityDimensions
-import net.minecraft.entity.EntityPose
-import net.minecraft.entity.EntityStatuses
-import net.minecraft.entity.EntityType
-import net.minecraft.entity.damage.DamageSource
-import net.minecraft.entity.projectile.ProjectileUtil
-import net.minecraft.entity.projectile.thrown.ThrownItemEntity
-import net.minecraft.item.ItemStack
-import net.minecraft.item.Items
-import net.minecraft.nbt.NbtCompound
-import net.minecraft.nbt.NbtElement
-import net.minecraft.nbt.NbtList
-import net.minecraft.particle.ItemStackParticleEffect
-import net.minecraft.particle.ParticleTypes
-import net.minecraft.server.world.ServerWorld
-import net.minecraft.sound.SoundCategory
-import net.minecraft.sound.SoundEvents
-import net.minecraft.util.hit.BlockHitResult
-import net.minecraft.util.hit.HitResult
-import net.minecraft.util.math.Vec3d
-import net.minecraft.world.World
+import net.minecraft.world.entity.Entity
+import net.minecraft.world.entity.EntityType
+import net.minecraft.world.damagesource.DamageSource
+import net.minecraft.world.entity.projectile.ProjectileUtil
+import net.minecraft.world.entity.projectile.ThrowableItemProjectile
+import net.minecraft.world.item.ItemStack
+import net.minecraft.world.item.Items
+import net.minecraft.nbt.CompoundTag
+import net.minecraft.nbt.NbtOps
+import net.minecraft.nbt.Tag
+import net.minecraft.nbt.ListTag
+import net.minecraft.core.particles.ItemParticleOption
+import net.minecraft.core.particles.ParticleTypes
+import net.minecraft.server.level.ServerLevel
+import net.minecraft.sounds.SoundSource
+import net.minecraft.sounds.SoundEvents
+import net.minecraft.world.phys.BlockHitResult
+import net.minecraft.world.phys.HitResult
+import net.minecraft.world.phys.Vec3
+import net.minecraft.world.level.Level
 import org.robbie.yaha.YahaUtils
 import org.robbie.yaha.registry.YahaEntities
 import org.robbie.yaha.registry.YahaItems
@@ -44,23 +42,23 @@ const val DRAG = 0.9
 
 class TimeBombEntity(
     entityType: EntityType<out TimeBombEntity>,
-    world: World
-) : ThrownItemEntity(entityType, world) {
+    world: Level
+) : ThrowableItemProjectile(entityType, world) {
     constructor(
-        world: World,
+        world: Level,
         owner: Entity?,
         hex: List<Iota>,
         media: Long,
         pigment: FrozenPigment,
         lifetime: Int,
-        pos: Vec3d
-    ) : this(YahaEntities.TIME_BOMB_ENTITY, world) {
-        this.owner = owner
+        pos: Vec3
+    ) : this(YahaEntities.TIME_BOMB_ENTITY.get(), world) {
+        setOwner(owner)
         this.hex = hex
         this.media = media
         this.pigment = pigment
         this.lifetime = lifetime
-        setPosition(pos)
+        setPos(pos)
     }
 
     private var hex: List<Iota> = listOf()
@@ -75,46 +73,47 @@ class TimeBombEntity(
 
     override fun tick() {
         super.tick()
-        if (age >= lifetime) explode()
+        if (tickCount >= lifetime) explode()
 
         // check collision
-        val hitResult = ProjectileUtil.getCollision(this, ::canHit)
-        if (hitResult.type != HitResult.Type.MISS) onCollision(hitResult)
+        val hitResult = ProjectileUtil.getHitResultOnMoveVector(this, this::canHitEntity)
+        if (hitResult.type != HitResult.Type.MISS) onHit(hitResult)
 
         // update position, rotation, and velocity
+        val velocity = deltaMovement
         YahaUtils.pitchYawFromRotVec(velocity)?.let {
-            pitch = it.first
-            yaw = it.second
+            setXRot(it.first)
+            setYRot(it.second)
         }
-        setPosition(pos.add(velocity))
-        velocity = velocity.multiply(DRAG)
+        setPos(position().add(velocity))
+        deltaMovement = velocity.scale(DRAG)
 
-        checkBlockCollision() // other minecraft projectiles seem to call both onCollision AND checkBlockCollision
+        checkInsideBlocks() // other minecraft projectiles seem to call both onHit AND block checks
     }
 
     private fun explode() {
-        if (world !is ServerWorld) return
+        if (level() !is ServerLevel) return
 
         if (hex.isNotEmpty()) {
-            val env = TimeBombCastEnv(world as ServerWorld, this)
+            val env = TimeBombCastEnv(level() as ServerLevel, this)
 
             var castingImage = CastingImage()
             val castingVM = CastingVM(castingImage, env)
-            castingVM.queueExecuteAndWrapIotas(hex, world as ServerWorld)
+            castingVM.queueExecuteAndWrapIotas(hex, level() as ServerLevel)
         }
 
-        (world as? ServerWorld)?.let {
+        (level() as? ServerLevel)?.let {
             it.playSound(
                 null,
                 x, y, z,
-                SoundEvents.BLOCK_AMETHYST_BLOCK_BREAK, SoundCategory.PLAYERS,
+                SoundEvents.AMETHYST_BLOCK_BREAK, SoundSource.PLAYERS,
                 1.0f, 0.5f
             )
-            val particleParam = ItemStackParticleEffect(
+            val particleParam = ItemParticleOption(
                 ParticleTypes.ITEM,
                 ItemStack(Items.AMETHYST_BLOCK, 1)
             )
-            it.spawnParticles(
+            it.sendParticles(
                 particleParam,
                 x, y, z,
                 16,
@@ -125,68 +124,70 @@ class TimeBombEntity(
         discard()
     }
 
-    override fun canHit(entity: Entity?) = false
-    override fun canHit() = true
+    override fun canHitEntity(entity: Entity) = false
 
-    override fun damage(source: DamageSource?, amount: Float): Boolean {
+    override fun hurt(source: DamageSource, amount: Float): Boolean {
         if (isInvulnerableTo(source)) return false
-        val entity = source?.attacker
+        val entity = source.entity
         if (entity == null) return false
 
-        if (!world.isClient) {
-            velocity = entity.rotationVector.multiply(0.4)
+        if (!level().isClientSide) {
+            deltaMovement = entity.lookAngle.scale(0.4)
         }
 
         return true
     }
 
-    override fun onBlockHit(blockHitResult: BlockHitResult?) {
-        if (blockHitResult == null) return
-        val normal = blockHitResult.side.vector
-        val force = velocity.multiply(
+    override fun onHitBlock(blockHitResult: BlockHitResult) {
+        val normal = blockHitResult.direction.normal
+        val force = deltaMovement.multiply(
             -normal.x.toDouble().absoluteValue,
             -normal.y.toDouble().absoluteValue,
             -normal.z.toDouble().absoluteValue
         )
-        velocity = velocity.add(force.multiply(1.8))
+        deltaMovement = deltaMovement.add(force.scale(1.8))
     }
 
-    override fun writeCustomDataToNbt(nbt: NbtCompound?) {
-        super.writeCustomDataToNbt(nbt)
-        nbt ?: return
+    override fun addAdditionalSaveData(nbt: CompoundTag) {
+        super.addAdditionalSaveData(nbt)
 
         if (hex.isNotEmpty()) {
-            val hexNbt = NbtList()
-            hex.forEach { hexNbt.add(IotaType.serialize(it)) }
+            val hexNbt = ListTag()
+            hex.forEach { iota ->
+                IotaType.TYPED_CODEC.encodeStart(NbtOps.INSTANCE, iota)
+                    .result()
+                    .ifPresent { hexNbt.add(it) }
+            }
             nbt.putList("Hex", hexNbt)
         }
         nbt.putLong("Media", media)
-        nbt.putCompound("Pigment", pigment.serializeToNBT())
+        FrozenPigment.CODEC.encodeStart(NbtOps.INSTANCE, pigment)
+            .result()
+            .ifPresent { nbt.put("Pigment", it) }
         nbt.putInt("Lifetime", lifetime)
     }
 
-    override fun readCustomDataFromNbt(nbt: NbtCompound?) {
-        super.readCustomDataFromNbt(nbt)
+    override fun readAdditionalSaveData(nbt: CompoundTag) {
+        super.readAdditionalSaveData(nbt)
 
-        hex = if (nbt?.hasList("Hex") == true && world is ServerWorld) {
-            val hexNbt = nbt.getList("Hex", NbtElement.COMPOUND_TYPE)
-            hexNbt.map { IotaType.deserialize(it.asCompound, world as ServerWorld) }
+        hex = if (nbt.hasList("Hex") && level() is ServerLevel) {
+            val hexNbt = nbt.getList("Hex", Tag.TAG_COMPOUND.toInt())
+            hexNbt.mapNotNull { IotaType.TYPED_CODEC.parse(NbtOps.INSTANCE, it).result().orElse(null) }
         } else listOf()
 
-        media = if (nbt?.hasLong("Media") == true)
+        media = if (nbt.hasLong("Media"))
             nbt.getLong("Media")
         else 0
 
-        pigment = if (nbt?.hasCompound("Pigment") == true)
-            FrozenPigment.fromNBT(nbt.getCompound("Pigment"))
+        pigment = if (nbt.hasCompound("Pigment"))
+            FrozenPigment.CODEC.parse(NbtOps.INSTANCE, nbt.getCompound("Pigment")).result().orElse(FrozenPigment.DEFAULT.get())
         else FrozenPigment.DEFAULT.get()
 
-        lifetime = if (nbt?.hasInt("Lifetime") == true)
+        lifetime = if (nbt.hasInt("Lifetime"))
             nbt.getInt("Lifetime")
         else 0
     }
 
-    override fun getDefaultItem() = YahaItems.TIME_BOMB
-    override fun getEyeHeight(pose: EntityPose?, dimensions: EntityDimensions?) = height / 2
-    override fun hasNoGravity() = true
+    override fun getDefaultItem() = YahaItems.TIME_BOMB.get()
+    override fun isNoGravity() = true
 }

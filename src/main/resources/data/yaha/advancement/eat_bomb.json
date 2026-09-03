@@ -2,7 +2,8 @@
   "parent": "yaha:bomb_defusal",
   "display": {
     "icon": {
-      "item": "yaha:time_bomb"
+      "count": 1,
+      "id": "yaha:time_bomb"
     },
     "title": {
       "translate": "advancements.yaha.eat_bomb.title"
@@ -18,9 +19,7 @@
       "trigger": "minecraft:consume_item",
       "conditions": {
         "item": {
-          "items": [
-            "yaha:time_bomb"
-          ]
+          "items": "yaha:time_bomb"
         }
       }
     }

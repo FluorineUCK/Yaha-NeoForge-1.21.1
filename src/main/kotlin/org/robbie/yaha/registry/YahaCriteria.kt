@@ -1,73 +1,29 @@
 package org.robbie.yaha.registry
 
-import com.google.gson.JsonObject
-import net.minecraft.advancement.criterion.AbstractCriterion
-import net.minecraft.advancement.criterion.AbstractCriterionConditions
-import net.minecraft.advancement.criterion.Criteria
-import net.minecraft.predicate.entity.AdvancementEntityPredicateDeserializer
-import net.minecraft.predicate.entity.LootContextPredicate
-import net.minecraft.server.network.ServerPlayerEntity
+import net.minecraft.advancements.critereon.PlayerTrigger
+import net.minecraft.core.registries.Registries
+import net.minecraft.server.level.ServerPlayer
+import net.neoforged.bus.api.IEventBus
+import net.neoforged.neoforge.registries.DeferredRegister
 import org.robbie.yaha.Yaha
+import java.util.function.Supplier
 
 object YahaCriteria {
-    val COLLIDE_PLANES = CollidePlanesCriterion()
-    val SUSCEPTION = SusceptionCriterion()
-    val BOMB_DEFUSAL = BombDefusalCriterion()
+    private val TRIGGERS = DeferredRegister.create(Registries.TRIGGER_TYPE, Yaha.MOD_ID)
 
-    fun register() {
-        Criteria.register(COLLIDE_PLANES)
-        Criteria.register(SUSCEPTION)
-        Criteria.register(BOMB_DEFUSAL)
+    val COLLIDE_PLANES = RegisteredPlayerTrigger("collide_planes")
+    val SUSCEPTION = RegisteredPlayerTrigger("susception")
+    val BOMB_DEFUSAL = RegisteredPlayerTrigger("bomb_defusal")
+
+    fun register(modBus: IEventBus) {
+        TRIGGERS.register(modBus)
     }
 
-    class CollidePlanesCriterion : AbstractCriterion<CollidePlanesCriterion.Condition>() {
-        override fun conditionsFromJson(
-            obj: JsonObject?,
-            playerPredicate: LootContextPredicate?,
-            predicateDeserializer: AdvancementEntityPredicateDeserializer?
-        ) = Condition()
+    class RegisteredPlayerTrigger(name: String) {
+        private val holder = TRIGGERS.register(name, Supplier { PlayerTrigger() })
 
-        override fun getId() = ID
-
-        fun trigger(player: ServerPlayerEntity) = trigger(player) { true }
-
-        class Condition : AbstractCriterionConditions(ID, LootContextPredicate.EMPTY)
-        companion object {
-            val ID = Yaha.id("collide_planes")
-        }
-    }
-
-    class SusceptionCriterion : AbstractCriterion<SusceptionCriterion.Condition>() {
-        override fun conditionsFromJson(
-            obj: JsonObject?,
-            playerPredicate: LootContextPredicate?,
-            predicateDeserializer: AdvancementEntityPredicateDeserializer?
-        ) = Condition()
-
-        override fun getId() = ID
-
-        fun trigger(player: ServerPlayerEntity) = trigger(player) { true }
-
-        class Condition : AbstractCriterionConditions(ID, LootContextPredicate.EMPTY)
-        companion object {
-            val ID = Yaha.id("susception")
-        }
-    }
-
-    class BombDefusalCriterion : AbstractCriterion<BombDefusalCriterion.Condition>() {
-        override fun conditionsFromJson(
-            obj: JsonObject?,
-            playerPredicate: LootContextPredicate?,
-            predicateDeserializer: AdvancementEntityPredicateDeserializer?
-        ) = Condition()
-
-        override fun getId() = ID
-
-        fun trigger(player: ServerPlayerEntity) = trigger(player) { true }
-
-        class Condition : AbstractCriterionConditions(ID, LootContextPredicate.EMPTY)
-        companion object {
-            val ID = Yaha.id("bomb_defusal")
+        fun trigger(player: ServerPlayer) {
+            holder.get().trigger(player)
         }
     }
 }

@@ -10,16 +10,15 @@ import at.petrak.hexcasting.api.casting.iota.Iota
 import at.petrak.hexcasting.api.casting.mishaps.MishapBadBlock
 import at.petrak.hexcasting.api.misc.MediaConstants
 import at.petrak.hexcasting.xplat.IXplatAbstractions
-import net.minecraft.block.Block
-import net.minecraft.block.Blocks
-import net.minecraft.command.argument.BlockStateArgument
-import net.minecraft.entity.ItemEntity
-import net.minecraft.item.BlockItem
-import net.minecraft.item.ItemStack
-import net.minecraft.nbt.NbtCompound
-import net.minecraft.server.network.ServerPlayerEntity
-import net.minecraft.state.property.Property
-import net.minecraft.util.math.BlockPos
+import net.minecraft.world.level.block.Block
+import net.minecraft.world.level.block.Blocks
+import net.minecraft.commands.arguments.blocks.BlockInput
+import net.minecraft.world.entity.item.ItemEntity
+import net.minecraft.world.item.ItemStack
+import net.minecraft.nbt.CompoundTag
+import net.minecraft.server.level.ServerPlayer
+import net.minecraft.world.level.block.state.properties.Property
+import net.minecraft.core.BlockPos
 import org.robbie.yaha.registry.YahaCriteria
 
 object OpSussifyBlock : SpellAction {
@@ -31,7 +30,7 @@ object OpSussifyBlock : SpellAction {
     ): SpellAction.Result {
         val pos = args.getBlockPos(0, argc)
         env.assertPosInRangeForEditing(pos)
-        val item = args.getItemEntity(1, argc)
+        val item = args.getItemEntity(env.world, 1, argc)
         env.assertEntityInRange(item)
 
         val block = env.world.getBlockState(pos).block
@@ -41,13 +40,13 @@ object OpSussifyBlock : SpellAction {
             else -> throw MishapBadBlock.of(pos, "yaha:sussifiable")
         }
 
-        if (item.stack.item == block.asItem() && env.castingEntity is ServerPlayerEntity)
-            YahaCriteria.SUSCEPTION.trigger(env.castingEntity as ServerPlayerEntity)
+        if (item.item.item == block.asItem() && env.castingEntity is ServerPlayer)
+            YahaCriteria.SUSCEPTION.trigger(env.castingEntity as ServerPlayer)
 
         return SpellAction.Result(
             Spell(pos, brushBlock, item),
             MediaConstants.DUST_UNIT / 8,
-            listOf(ParticleSpray.cloud(pos.toCenterPos(), 1.0))
+            listOf(ParticleSpray.cloud(pos.center, 1.0))
         )
     }
 
@@ -59,19 +58,19 @@ object OpSussifyBlock : SpellAction {
                     env.world,
                     pos,
                     ItemStack(brushBlock),
-                    env.castingEntity as? ServerPlayerEntity
+                    env.castingEntity as? ServerPlayer
             )) return
 
-            val blockNbt = NbtCompound()
-            blockNbt.put("item", item.stack.writeNbt(NbtCompound()))
+            val blockNbt = CompoundTag()
+            blockNbt.put("item", item.item.save(env.world.registryAccess()))
 
-            val blockWithNbt = BlockStateArgument(
-                brushBlock.defaultState,
+            val blockWithNbt = BlockInput(
+                brushBlock.defaultBlockState(),
                 mutableSetOf<Property<*>>(),
                 blockNbt
             )
 
-            if (blockWithNbt.setBlockState(env.world, pos, Block.NOTIFY_ALL))
+            if (blockWithNbt.place(env.world, pos, Block.UPDATE_ALL))
                 item.discard()
         }
     }

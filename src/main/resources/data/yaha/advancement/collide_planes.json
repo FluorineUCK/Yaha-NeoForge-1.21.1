@@ -2,7 +2,8 @@
   "parent": "hexcasting:root",
   "display": {
     "icon": {
-      "item": "minecraft:feather"
+      "count": 1,
+      "id": "minecraft:feather"
     },
     "title": {
       "translate": "advancements.yaha.collide_planes.title"

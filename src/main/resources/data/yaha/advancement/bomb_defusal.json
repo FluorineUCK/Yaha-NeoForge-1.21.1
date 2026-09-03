@@ -2,7 +2,8 @@
   "parent": "hexcasting:root",
   "display": {
     "icon": {
-      "item": "yaha:time_bomb"
+      "count": 1,
+      "id": "yaha:time_bomb"
     },
     "title": {
       "translate": "advancements.yaha.bomb_defusal.title"

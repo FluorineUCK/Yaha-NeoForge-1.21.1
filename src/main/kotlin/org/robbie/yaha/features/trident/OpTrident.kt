@@ -9,7 +9,7 @@ import at.petrak.hexcasting.api.casting.getVec3
 import at.petrak.hexcasting.api.casting.iota.EntityIota
 import at.petrak.hexcasting.api.casting.iota.Iota
 import at.petrak.hexcasting.api.misc.MediaConstants
-import net.minecraft.util.math.Vec3d
+import net.minecraft.world.phys.Vec3
 
 object OpTrident : SpellAction {
     override val argc = 1
@@ -27,7 +27,7 @@ object OpTrident : SpellAction {
         )
     }
 
-    private data class Spell(val pos: Vec3d) : RenderedSpell {
+    private data class Spell(val pos: Vec3) : RenderedSpell {
         override fun cast(env: CastingEnvironment) {}
         override fun cast(env: CastingEnvironment, image: CastingImage): CastingImage {
             val trident = TridentEntity(
@@ -35,8 +35,8 @@ object OpTrident : SpellAction {
                 env.castingEntity,
                 pos
             )
-            env.world.spawnEntity(trident)
-            return image.copy(stack = image.stack.toList().plus(EntityIota(trident)))
+            env.world.addFreshEntity(trident)
+            return image.copy(stack = image.stack.appended(EntityIota(trident)))
         }
     }
 }

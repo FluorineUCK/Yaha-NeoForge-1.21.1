@@ -1,117 +1,114 @@
 package org.robbie.yaha.features.bundles
 
 import at.petrak.hexcasting.api.casting.iota.Iota
-import at.petrak.hexcasting.api.casting.iota.IotaType
 import at.petrak.hexcasting.api.casting.iota.NullIota
 import at.petrak.hexcasting.api.item.IotaHolderItem
-import at.petrak.hexcasting.api.utils.getList
-import net.minecraft.client.item.TooltipContext
-import net.minecraft.client.item.TooltipData
-import net.minecraft.entity.Entity
-import net.minecraft.entity.ItemEntity
-import net.minecraft.entity.player.PlayerEntity
-import net.minecraft.inventory.StackReference
-import net.minecraft.item.Item
-import net.minecraft.item.ItemStack
-import net.minecraft.item.ItemUsage
-import net.minecraft.nbt.NbtCompound
-import net.minecraft.nbt.NbtElement
-import net.minecraft.nbt.NbtList
-import net.minecraft.screen.slot.Slot
-import net.minecraft.server.network.ServerPlayerEntity
-import net.minecraft.sound.SoundEvents
-import net.minecraft.stat.Stats
-import net.minecraft.text.Text
-import net.minecraft.util.ClickType
-import net.minecraft.util.Formatting
-import net.minecraft.util.Hand
-import net.minecraft.util.TypedActionResult
-import net.minecraft.util.collection.DefaultedList
-import net.minecraft.util.math.MathHelper
-import net.minecraft.world.World
+import net.minecraft.core.component.DataComponents
+import net.minecraft.world.item.Item.TooltipContext
+import net.minecraft.world.inventory.tooltip.TooltipComponent
+import net.minecraft.world.entity.Entity
+import net.minecraft.world.entity.item.ItemEntity
+import net.minecraft.world.entity.player.Player
+import net.minecraft.world.entity.SlotAccess
+import net.minecraft.world.item.Item
+import net.minecraft.world.item.ItemStack
+import net.minecraft.world.item.ItemUtils
+import net.minecraft.world.inventory.Slot
+import net.minecraft.server.level.ServerPlayer
+import net.minecraft.sounds.SoundEvents
+import net.minecraft.stats.Stats
+import net.minecraft.network.chat.Component
+import net.minecraft.world.inventory.ClickAction
+import net.minecraft.ChatFormatting
+import net.minecraft.world.InteractionHand
+import net.minecraft.world.InteractionResultHolder
+import net.minecraft.core.NonNullList
+import net.minecraft.util.Mth
+import net.minecraft.world.level.Level
+import net.minecraft.world.item.TooltipFlag
+import net.minecraft.world.item.component.BundleContents
 import org.robbie.yaha.Yaha
-import org.robbie.yaha.registry.YahaCardinalComponents
 import java.util.Optional
 import java.util.function.Predicate
 import java.util.stream.Stream
 
-val ITEM_BAR_COLOR = MathHelper.packRgb(0.4f, 0.4f, 1.0f)
+val ITEM_BAR_COLOR = Mth.color(0.4f, 0.4f, 1.0f)
 
 /**
  * Holds 16 individual items that satisfy the given filter.
  * Reading this bundle picks and reads a random item inside, or null if no non-empty readable item can be found.
  */
-class IotaHolderBundle(settings: Settings, val filter: Predicate<Item>) : Item(settings), IotaHolderItem {
-    override fun onStackClicked(stack: ItemStack, slot: Slot, clickType: ClickType, player: PlayerEntity): Boolean {
-        if (clickType != ClickType.RIGHT) return false
-        val slotItem = slot.stack
+class IotaHolderBundle(settings: Properties, val filter: Predicate<Item>) : Item(settings), IotaHolderItem {
+    override fun overrideStackedOnOther(stack: ItemStack, slot: Slot, clickType: ClickAction, player: Player): Boolean {
+        if (clickType != ClickAction.SECONDARY) return false
+        val slotItem = slot.item
         if (slotItem.isEmpty) {
             removeFirst(stack)?.let {
-                slot.insertStack(it)
+                slot.safeInsert(it)
                 playRemoveOneSound(player)
             }
-        } else if (slotItem.item.canBeNested() && addOneToBundle(stack, slotItem)) {
-            slotItem.decrement(1)
+        } else if (slotItem.item.canFitInsideContainerItems() && addOneToBundle(stack, slotItem)) {
+            slotItem.shrink(1)
             playInsertSound(player)
         }
         return true
     }
 
-    override fun onClicked(
+    override fun overrideOtherStackedOnMe(
         stack: ItemStack,
         otherStack: ItemStack,
         slot: Slot,
-        clickType: ClickType,
-        player: PlayerEntity,
-        cursorStackReference: StackReference
+        clickType: ClickAction,
+        player: Player,
+        cursorStackReference: SlotAccess
     ): Boolean {
-        if (clickType != ClickType.RIGHT) return false
+        if (clickType != ClickAction.SECONDARY) return false
         if (otherStack.isEmpty) {
             removeSelected(stack, player)?.let {
                 cursorStackReference.set(it)
                 playRemoveOneSound(player)
             }
         } else if (addOneToBundle(stack, otherStack)) {
-            otherStack.decrement(1)
+            otherStack.shrink(1)
             playInsertSound(player)
         }
         return true
     }
 
-    override fun use(world: World, user: PlayerEntity, hand: Hand): TypedActionResult<ItemStack> {
-        val bundle = user.getStackInHand(hand)
+    override fun use(world: Level, user: Player, hand: InteractionHand): InteractionResultHolder<ItemStack> {
+        val bundle = user.getItemInHand(hand)
         if (dropAll(bundle, user)) {
             playDropContentsSound(user)
-            user.incrementStat(Stats.USED.getOrCreateStat(this))
-            return TypedActionResult.success(bundle, world.isClient)
+            user.awardStat(Stats.ITEM_USED.get(this))
+            return InteractionResultHolder.sidedSuccess(bundle, world.isClientSide)
         }
-        return TypedActionResult.fail(bundle)
+        return InteractionResultHolder.fail(bundle)
     }
 
-    override fun isItemBarVisible(stack: ItemStack) = getBundleOccupancy(stack) > 0
+    override fun isBarVisible(stack: ItemStack) = getBundleOccupancy(stack) > 0
 
-    override fun getItemBarStep(stack: ItemStack) = (1 + 12 * getBundleOccupancy(stack) / MAX_COUNT)
+    override fun getBarWidth(stack: ItemStack) = (1 + 12 * getBundleOccupancy(stack) / MAX_COUNT)
         .coerceAtMost(13)
 
-    override fun getItemBarColor(stack: ItemStack) = ITEM_BAR_COLOR
+    override fun getBarColor(stack: ItemStack) = ITEM_BAR_COLOR
 
-    override fun getTooltipData(stack: ItemStack): Optional<TooltipData> {
-        val defaultedList = DefaultedList.of<ItemStack>()
+    override fun getTooltipImage(stack: ItemStack): Optional<TooltipComponent> {
+        val defaultedList = NonNullList.create<ItemStack>()
         getBundledStacks(stack).forEach { defaultedList.add(it) }
         return Optional.of(IotaBundleTooltipData(defaultedList))
     }
 
-    override fun appendTooltip(stack: ItemStack, world: World?, tooltip: List<Text>, context: TooltipContext) {
-        (tooltip as MutableList).add(
-            Text.translatable(
+    override fun appendHoverText(stack: ItemStack, context: TooltipContext, tooltip: MutableList<Component>, flag: TooltipFlag) {
+        tooltip.add(
+            Component.translatable(
                 "item.minecraft.bundle.fullness",
                 getBundleOccupancy(stack),
-                MAX_COUNT).formatted(Formatting.GRAY)
+                MAX_COUNT).withStyle(ChatFormatting.GRAY)
         )
     }
 
-    override fun onItemEntityDestroyed(entity: ItemEntity) {
-        ItemUsage.spawnItemContents(entity, getBundledStacks(entity.stack))
+    override fun onDestroyed(entity: ItemEntity) {
+        ItemUtils.onContainerDestroyed(entity, getBundledStacks(entity.item).toList())
     }
 
     /**
@@ -119,17 +116,17 @@ class IotaHolderBundle(settings: Settings, val filter: Predicate<Item>) : Item(s
      * Items with no iota tag can be chosen, and return a NullIota.
      * If the bundle is empty, this returns null.
      */
-    override fun readIotaTag(stack: ItemStack): NbtCompound? {
+    override fun readIota(stack: ItemStack): Iota? {
         val itemList = getBundledStacks(stack).toList()
         if (itemList.isEmpty()) return null
         val chosenItem = itemList.elementAt(Yaha.RANDOM.nextInt(itemList.count()))
-        return (chosenItem.item as? IotaHolderItem)?.readIotaTag(chosenItem)
-            ?: IotaType.serialize(NullIota())
+        return (chosenItem.item as? IotaHolderItem)?.readIota(chosenItem)
+            ?: NullIota()
     }
 
-    override fun writeable(stack: ItemStack?) = false
-    override fun canWrite(stack: ItemStack?, iota: Iota?) = false
-    override fun writeDatum(stack: ItemStack?, iota: Iota?) {}
+    override fun writeable(stack: ItemStack) = false
+    override fun canWrite(stack: ItemStack, iota: Iota?) = false
+    override fun writeDatum(stack: ItemStack, iota: Iota?) {}
 
     /**
      * Attempts to add one item of the given stack to the bundle
@@ -137,13 +134,9 @@ class IotaHolderBundle(settings: Settings, val filter: Predicate<Item>) : Item(s
      */
     fun addOneToBundle(bundle: ItemStack, stack: ItemStack): Boolean {
         if (getBundleOccupancy(bundle) == MAX_COUNT || !filter.test(stack.item)) return false
-        val bundleNbt = bundle.orCreateNbt // kotlin removes the "get" lol
-        if (!bundleNbt.contains("Items")) bundleNbt.put("Items", NbtList())
-        val listNbt = bundleNbt.getList("Items", NbtElement.COMPOUND_TYPE)
-        val item = stack.copyWithCount(1)
-        val itemNbt = NbtCompound()
-        item.writeNbt(itemNbt)
-        listNbt.add(0, itemNbt)
+        val items = getBundledStacks(bundle).toList().toMutableList()
+        items.add(0, stack.copyWithCount(1))
+        setBundledStacks(bundle, items)
         return true
     }
 
@@ -152,9 +145,11 @@ class IotaHolderBundle(settings: Settings, val filter: Predicate<Item>) : Item(s
      * Returns null if the bundle was empty.
      */
     fun removeFirst(bundle: ItemStack): ItemStack? {
-        val bundleNbt = bundle.orCreateNbt
-        val listNbt = bundleNbt.getList("Items", NbtElement.COMPOUND_TYPE)
-        return listNbt.removeFirstOrNull()?.let { ItemStack.fromNbt(it as NbtCompound) }
+        val items = getBundledStacks(bundle).toList().toMutableList()
+        if (items.isEmpty()) return null
+        val removed = items.removeAt(0)
+        setBundledStacks(bundle, items)
+        return removed
     }
 
     /**
@@ -162,53 +157,52 @@ class IotaHolderBundle(settings: Settings, val filter: Predicate<Item>) : Item(s
      * Returns null if either the bundle was empty
      * or the player has selected outside the list of items. somehow.
      */
-    fun removeSelected(bundle: ItemStack, player: PlayerEntity): ItemStack? {
-        val selected = YahaCardinalComponents.BUNDLE_SELECT.get(player).selected
-        val bundleNbt = bundle.orCreateNbt
-        val listNbt = bundleNbt.getList("Items", NbtElement.COMPOUND_TYPE)
-        if (selected >= listNbt.size) return null
-        return ItemStack.fromNbt(listNbt.removeAt(selected) as NbtCompound)
+    fun removeSelected(bundle: ItemStack, player: Player): ItemStack? {
+        val selected = BundleSelection.get(player)
+        val items = getBundledStacks(bundle).toList().toMutableList()
+        if (selected !in items.indices) return null
+        val removed = items.removeAt(selected)
+        setBundledStacks(bundle, items)
+        return removed
     }
 
     /**
      * Drops all items in the bundle. bleeeehh
      * Returns if dropping was successful (bundle wasn't empty)
      */
-    fun dropAll(bundle: ItemStack, player: PlayerEntity): Boolean {
-        val bundleNbt = bundle.orCreateNbt
-        val listNbt = bundleNbt.getList("Items", NbtElement.COMPOUND_TYPE)
-        if (listNbt.isEmpty()) return false
-        if (player is ServerPlayerEntity) {
-            for (itemNbt in listNbt) {
-                val itemStack = ItemStack.fromNbt(itemNbt as NbtCompound)
-                player.dropItem(itemStack, true)
+    fun dropAll(bundle: ItemStack, player: Player): Boolean {
+        val items = getBundledStacks(bundle).toList()
+        if (items.isEmpty()) return false
+        if (player is ServerPlayer) {
+            for (itemStack in items) {
+                player.drop(itemStack, true)
             }
         }
-        bundle.removeSubNbt("Items")
+        bundle.remove(DataComponents.BUNDLE_CONTENTS)
         return true
     }
 
     fun playRemoveOneSound(entity: Entity) {
         entity.playSound(
-            SoundEvents.ITEM_BUNDLE_REMOVE_ONE,
+            SoundEvents.BUNDLE_REMOVE_ONE,
             0.8f,
-            0.8f + entity.world.random.nextFloat() * 0.4f
+            0.8f + entity.random.nextFloat() * 0.4f
         )
     }
 
     fun playInsertSound(entity: Entity) {
         entity.playSound(
-            SoundEvents.ITEM_BUNDLE_INSERT,
+            SoundEvents.BUNDLE_INSERT,
             0.8f,
-            0.8f + entity.world.random.nextFloat() * 0.4f
+            0.8f + entity.random.nextFloat() * 0.4f
         )
     }
 
     fun playDropContentsSound(entity: Entity) {
         entity.playSound(
-            SoundEvents.ITEM_BUNDLE_DROP_CONTENTS,
+            SoundEvents.BUNDLE_DROP_CONTENTS,
             0.8f,
-            0.8f + entity.world.random.nextFloat() * 0.4f
+            0.8f + entity.random.nextFloat() * 0.4f
         )
     }
 
@@ -217,11 +211,17 @@ class IotaHolderBundle(settings: Settings, val filter: Predicate<Item>) : Item(s
         const val MAX_COUNT = 16
 
         fun getBundledStacks(bundle: ItemStack): Stream<ItemStack> {
-            val bundleNbt = bundle.nbt ?: return Stream.empty()
-            val listNbt = bundleNbt.getList("Items", NbtElement.COMPOUND_TYPE)
-            return listNbt.stream().map { ItemStack.fromNbt(it as NbtCompound) }
+            return bundle.getOrDefault(DataComponents.BUNDLE_CONTENTS, BundleContents.EMPTY).itemCopyStream()
         }
 
         fun getBundleOccupancy(bundle: ItemStack) = getBundledStacks(bundle).count().toInt()
+
+        private fun setBundledStacks(bundle: ItemStack, items: List<ItemStack>) {
+            if (items.isEmpty()) {
+                bundle.remove(DataComponents.BUNDLE_CONTENTS)
+            } else {
+                bundle.set(DataComponents.BUNDLE_CONTENTS, BundleContents(items))
+            }
+        }
     }
 }

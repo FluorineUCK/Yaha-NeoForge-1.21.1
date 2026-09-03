@@ -9,7 +9,7 @@ import at.petrak.hexcasting.api.casting.getVec3
 import at.petrak.hexcasting.api.casting.iota.EntityIota
 import at.petrak.hexcasting.api.casting.iota.Iota
 import at.petrak.hexcasting.api.misc.MediaConstants
-import net.minecraft.util.math.Vec3d
+import net.minecraft.world.phys.Vec3
 
 object OpAnvil : SpellAction {
     override val argc = 1
@@ -27,7 +27,7 @@ object OpAnvil : SpellAction {
         )
     }
 
-    private data class Spell(val pos: Vec3d) : RenderedSpell {
+    private data class Spell(val pos: Vec3) : RenderedSpell {
         override fun cast(env: CastingEnvironment) {}
         override fun cast(env: CastingEnvironment, image: CastingImage): CastingImage {
             val anvil = AnvilEntity(
@@ -35,8 +35,8 @@ object OpAnvil : SpellAction {
                 env.castingEntity,
                 pos
             )
-            env.world.spawnEntity(anvil)
-            return image.copy(stack = image.stack.toList().plus(EntityIota(anvil)))
+            env.world.addFreshEntity(anvil)
+            return image.copy(stack = image.stack.appended(EntityIota(anvil)))
         }
     }
 }

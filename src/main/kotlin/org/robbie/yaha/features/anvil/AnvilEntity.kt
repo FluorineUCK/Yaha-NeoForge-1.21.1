@@ -1,23 +1,22 @@
 package org.robbie.yaha.features.anvil
 
-import net.fabricmc.loader.api.FabricLoader
-import net.minecraft.entity.Entity
-import net.minecraft.entity.EntityDimensions
-import net.minecraft.entity.EntityPose
-import net.minecraft.entity.EntityType
-import net.minecraft.entity.projectile.ProjectileEntity
-import net.minecraft.entity.projectile.ProjectileUtil
-import net.minecraft.item.ItemStack
-import net.minecraft.item.Items
-import net.minecraft.nbt.NbtCompound
-import net.minecraft.particle.ItemStackParticleEffect
-import net.minecraft.particle.ParticleTypes
-import net.minecraft.server.world.ServerWorld
-import net.minecraft.util.hit.BlockHitResult
-import net.minecraft.util.hit.EntityHitResult
-import net.minecraft.util.hit.HitResult
-import net.minecraft.util.math.Vec3d
-import net.minecraft.world.World
+import net.neoforged.fml.ModList
+import net.minecraft.world.entity.Entity
+import net.minecraft.world.entity.EntityType
+import net.minecraft.world.entity.projectile.Projectile
+import net.minecraft.world.entity.projectile.ProjectileUtil
+import net.minecraft.world.item.ItemStack
+import net.minecraft.world.item.Items
+import net.minecraft.nbt.CompoundTag
+import net.minecraft.core.particles.ItemParticleOption
+import net.minecraft.core.particles.ParticleTypes
+import net.minecraft.network.syncher.SynchedEntityData
+import net.minecraft.server.level.ServerLevel
+import net.minecraft.world.phys.BlockHitResult
+import net.minecraft.world.phys.EntityHitResult
+import net.minecraft.world.phys.HitResult
+import net.minecraft.world.phys.Vec3
+import net.minecraft.world.level.Level
 import org.robbie.yaha.YahaUtils
 import org.robbie.yaha.compat.SpectrumCompat
 import org.robbie.yaha.features.paper_plane.PaperPlaneEntity
@@ -32,15 +31,15 @@ const val DRAG = 0.98
 
 class AnvilEntity(
     entityType: EntityType<out AnvilEntity>,
-    world: World
-) : ProjectileEntity(entityType, world) {
+    world: Level
+) : Projectile(entityType, world) {
     constructor(
-        world: World,
+        world: Level,
         owner: Entity?,
-        pos: Vec3d
-    ) : this(YahaEntities.ANVIL_ENTITY, world) {
-        this.owner = owner
-        setPosition(pos)
+        pos: Vec3
+    ) : this(YahaEntities.ANVIL_ENTITY.get(), world) {
+        setOwner(owner)
+        setPos(pos)
     }
 
     private var cooldown = 2
@@ -49,70 +48,72 @@ class AnvilEntity(
     override fun tick() {
         super.tick()
 
-        if (!world.isClient && age > MAX_AGE) shatter()
+        if (!level().isClientSide && tickCount > MAX_AGE) shatter()
         if (cooldown != 0) cooldown--
 
+        var velocity = deltaMovement
         YahaUtils.pitchYawFromRotVec(velocity)?.let {
-            pitch = it.first
-            yaw = it.second
+            setXRot(it.first)
+            setYRot(it.second)
         }
-        if (!hasNoGravity()) velocity = velocity.add(0.0, GRAVITY, 0.0)
-        setPosition(pos.add(velocity))
-        velocity = velocity.multiply(DRAG)
+        if (!isNoGravity) velocity = velocity.add(0.0, GRAVITY, 0.0)
+        setPos(position().add(velocity))
+        deltaMovement = velocity.scale(DRAG)
 
-        checkBlockCollision()
-        val hitResult = ProjectileUtil.getCollision(this, ::canHit)
-        if (hitResult.type != HitResult.Type.MISS) onCollision(hitResult)
+        checkInsideBlocks()
+        val hitResult = ProjectileUtil.getHitResultOnMoveVector(this, this::canHitEntity)
+        if (hitResult.type != HitResult.Type.MISS) onHit(hitResult)
     }
 
-    override fun canHit(entity: Entity) = super.canHit(entity)
+    override fun canHitEntity(entity: Entity) = super.canHitEntity(entity)
             && entity !is AnvilEntity
             && (
             entity !is PaperPlaneEntity
                     || entity.owner != owner
             )
-    override fun canHit() = false
 
-    override fun onBlockHit(blockHitResult: BlockHitResult) {
-        setPosition(blockHitResult.pos)
-        if (FabricLoader.getInstance().isModLoaded("spectrum")) SpectrumCompat.crush(this)
-        if (!world.isClient) shatter()
+    override fun onHitBlock(blockHitResult: BlockHitResult) {
+        setPos(blockHitResult.location)
+        if (ModList.get().isLoaded("spectrum")) SpectrumCompat.crush(this)
+        if (!level().isClientSide) shatter()
     }
 
-    override fun onEntityHit(entityHitResult: EntityHitResult) {
+    override fun onHitEntity(entityHitResult: EntityHitResult) {
         val entity = entityHitResult.entity
         if (cooldown != 0) return
 
-        playSound(YahaSounds.ANVIL_HIT, 1.0f, 1.0f + 0.2f * random.nextFloat())
+        playSound(YahaSounds.ANVIL_HIT.get(), 1.0f, 1.0f + 0.2f * random.nextFloat())
         spawnParticles()
 
-        val damage = 20 - 20 * (velocity.lengthSquared() / 15 + 1).pow(-2)
-        if (entity !is ProjectileEntity) {
-            entity.damage(world.damageSources.create(
+        val velocity = deltaMovement
+        val damage = 20 - 20 * (velocity.lengthSqr() / 15 + 1).pow(-2)
+        if (entity !is Projectile) {
+            entity.hurt(YahaDamageTypes.source(
+                level(),
                 YahaDamageTypes.ANVIL,
                 this,
                 owner
             ), damage.toFloat())
         }
-        val entityVelocity = entity.velocity
-        entity.velocity = velocity
-        velocity = entityVelocity
+        val entityVelocity = entity.deltaMovement
+        entity.deltaMovement = velocity
+        deltaMovement = entityVelocity
         cooldown = 2
 
         count--
-        if (count == 0 && !world.isClient) shatter()
+        if (count == 0 && !level().isClientSide) shatter()
     }
 
     private fun shatter() {
-        playSound(YahaSounds.ANVIL_SHATTER, 0.8f, 1.0f + 0.2f * random.nextFloat())
+        playSound(YahaSounds.ANVIL_SHATTER.get(), 0.8f, 1.0f + 0.2f * random.nextFloat())
         spawnParticles()
         discard()
     }
 
     private fun spawnParticles() {
-        (world as? ServerWorld)?.let {
-            val particleParam = ItemStackParticleEffect(ParticleTypes.ITEM, ItemStack(Items.AMETHYST_BLOCK, 1))
-            it.spawnParticles(
+        (level() as? ServerLevel)?.let {
+            val particleParam = ItemParticleOption(ParticleTypes.ITEM, ItemStack(Items.AMETHYST_BLOCK, 1))
+            it.sendParticles(
                 particleParam,
                 x, y + 0.5, z,
                 16,
@@ -122,20 +123,19 @@ class AnvilEntity(
         }
     }
 
-    override fun writeCustomDataToNbt(nbt: NbtCompound) {
-        super.writeCustomDataToNbt(nbt)
+    override fun addAdditionalSaveData(nbt: CompoundTag) {
+        super.addAdditionalSaveData(nbt)
         nbt.putInt("Count", count)
     }
 
-    override fun readCustomDataFromNbt(nbt: NbtCompound) {
-        super.readCustomDataFromNbt(nbt)
+    override fun readAdditionalSaveData(nbt: CompoundTag) {
+        super.readAdditionalSaveData(nbt)
         count = if (nbt.contains("Count")) {
             nbt.getInt("Count")
         } else 3
     }
 
-    override fun collidesWith(other: Entity) = (other.isCollidable || other.isPushable) && !isConnectedThroughVehicle(other)
-    override fun isCollidable() = cooldown == 0
-    override fun getEyeHeight(pose: EntityPose, dimensions: EntityDimensions) = height / 2
-    override fun initDataTracker() {}
+    override fun canCollideWith(other: Entity) = (other.isPickable || other.isPushable) && !isPassengerOfSameVehicle(other)
+    override fun isPickable() = cooldown == 0
+    override fun defineSynchedData(builder: SynchedEntityData.Builder) {}
 }

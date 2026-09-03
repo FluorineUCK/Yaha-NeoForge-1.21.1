@@ -1,19 +1,20 @@
 package org.robbie.yaha.features.trident
 
-import net.minecraft.entity.Entity
-import net.minecraft.entity.EntityType
-import net.minecraft.entity.projectile.ProjectileEntity
-import net.minecraft.entity.projectile.ProjectileUtil
-import net.minecraft.item.ItemStack
-import net.minecraft.item.Items
-import net.minecraft.particle.ItemStackParticleEffect
-import net.minecraft.particle.ParticleTypes
-import net.minecraft.server.world.ServerWorld
-import net.minecraft.util.hit.BlockHitResult
-import net.minecraft.util.hit.EntityHitResult
-import net.minecraft.util.hit.HitResult
-import net.minecraft.util.math.Vec3d
-import net.minecraft.world.World
+import net.minecraft.world.entity.Entity
+import net.minecraft.world.entity.EntityType
+import net.minecraft.world.entity.projectile.Projectile
+import net.minecraft.world.entity.projectile.ProjectileUtil
+import net.minecraft.world.item.ItemStack
+import net.minecraft.world.item.Items
+import net.minecraft.core.particles.ItemParticleOption
+import net.minecraft.core.particles.ParticleTypes
+import net.minecraft.network.syncher.SynchedEntityData
+import net.minecraft.server.level.ServerLevel
+import net.minecraft.world.phys.BlockHitResult
+import net.minecraft.world.phys.EntityHitResult
+import net.minecraft.world.phys.HitResult
+import net.minecraft.world.phys.Vec3
+import net.minecraft.world.level.Level
 import org.robbie.yaha.YahaUtils
 import org.robbie.yaha.features.paper_plane.PaperPlaneEntity
 import org.robbie.yaha.registry.YahaDamageTypes
@@ -27,15 +28,15 @@ const val DRAG = 0.99
 
 class TridentEntity(
     entityType: EntityType<out TridentEntity>,
-    world: World
-) : ProjectileEntity(entityType, world) {
+    world: Level
+) : Projectile(entityType, world) {
     constructor(
-        world: World,
+        world: Level,
         owner: Entity?,
-        pos: Vec3d
-    ) : this(YahaEntities.TRIDENT_ENTITY, world) {
-        this.owner = owner
-        setPosition(pos)
+        pos: Vec3
+    ) : this(YahaEntities.TRIDENT_ENTITY.get(), world) {
+        setOwner(owner)
+        setPos(pos)
     }
 
     val piercedEntities = hashSetOf<Int>()
@@ -43,60 +44,64 @@ class TridentEntity(
     override fun tick() {
         super.tick()
 
-        if (!world.isClient && age > MAX_AGE) shatter()
+        if (!level().isClientSide && tickCount > MAX_AGE) shatter()
 
-        if (velocity.lengthSquared() != 0.0) YahaUtils.pitchYawFromRotVec(velocity)?.let {
-            pitch = it.first
-            yaw = it.second
+        var velocity = deltaMovement
+        if (velocity.lengthSqr() != 0.0) YahaUtils.pitchYawFromRotVec(velocity)?.let {
+            setXRot(it.first)
+            setYRot(it.second)
         }
 
-        velocity = velocity.multiply(DRAG)
-        if (!hasNoGravity()) velocity = velocity.add(0.0, GRAVITY, 0.0)
-        setPosition(pos.add(velocity))
+        velocity = velocity.scale(DRAG)
+        if (!isNoGravity) velocity = velocity.add(0.0, GRAVITY, 0.0)
+        setPos(position().add(velocity))
+        deltaMovement = velocity
 
         while (!isRemoved) {
-            val hitResult = ProjectileUtil.getCollision(this, ::canHit)
+            val hitResult = ProjectileUtil.getHitResultOnMoveVector(this, this::canHitEntity)
             if (hitResult.type == HitResult.Type.MISS) break
-            onCollision(hitResult)
+            onHit(hitResult)
         }
 
-        checkBlockCollision()
+        checkInsideBlocks()
     }
 
-    override fun onBlockHit(blockHitResult: BlockHitResult?) {
+    override fun onHitBlock(blockHitResult: BlockHitResult) {
         shatter()
     }
 
-    override fun onEntityHit(entityHitResult: EntityHitResult) {
+    override fun onHitEntity(entityHitResult: EntityHitResult) {
         val entity = entityHitResult.entity
 
-        playSound(YahaSounds.TRIDENT_HIT, 1.0f, 1.0f + 0.2f * random.nextFloat())
+        playSound(YahaSounds.TRIDENT_HIT.get(), 1.0f, 1.0f + 0.2f * random.nextFloat())
         spawnParticles()
 
-        val damage = 20 - 20 * (velocity.lengthSquared() / 15 + 1).pow(-2)
-        if (entity !is ProjectileEntity) {
-            entity.damage(world.damageSources.create(
+        val velocity = deltaMovement
+        val damage = 20 - 20 * (velocity.lengthSqr() / 15 + 1).pow(-2)
+        if (entity !is Projectile) {
+            entity.hurt(YahaDamageTypes.source(
+                level(),
                 YahaDamageTypes.TRIDENT,
                 this,
                 owner
             ), damage.toFloat())
         }
-        entity.velocity = velocity.negate()
+        entity.deltaMovement = velocity.reverse()
 
         piercedEntities.add(entity.id)
         if (piercedEntities.size == 3) shatter()
     }
 
     private fun shatter() {
-        playSound(YahaSounds.TRIDENT_SHATTER, 1.0f, 1.0f + 0.2f * random.nextFloat())
+        playSound(YahaSounds.TRIDENT_SHATTER.get(), 1.0f, 1.0f + 0.2f * random.nextFloat())
         spawnParticles()
         discard()
     }
 
     private fun spawnParticles() {
-        (world as? ServerWorld)?.let {
-            val particleParam = ItemStackParticleEffect(ParticleTypes.ITEM, ItemStack(Items.AMETHYST_BLOCK, 1))
-            it.spawnParticles(
+        (level() as? ServerLevel)?.let {
+            val particleParam = ItemParticleOption(ParticleTypes.ITEM, ItemStack(Items.AMETHYST_BLOCK, 1))
+            it.sendParticles(
                 particleParam,
                 x, y, z,
                 8,
@@ -106,9 +111,8 @@ class TridentEntity(
         }
     }
 
-    override fun canHit() = false
-    override fun canHit(entity: Entity) = super.canHit(entity)
+    override fun canHitEntity(entity: Entity) = super.canHitEntity(entity)
             && !piercedEntities.contains(entity.id)
             && (entity !is PaperPlaneEntity || entity.owner != owner)
-    override fun initDataTracker() {}
+    override fun defineSynchedData(builder: SynchedEntityData.Builder) {}
 }
