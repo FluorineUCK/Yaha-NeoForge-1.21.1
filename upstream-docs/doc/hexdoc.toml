@@ -1,0 +1,39 @@
+modid = "yaha"
+book = "hexcasting:thehexbook"
+
+resource_dirs = [  # top takes priority
+    "resources",
+    "{$_project.src}/main/resources",
+    { path="{$_project.src}/generated/resources", required=false },
+    { modid="hexcasting" },
+    { modid="minecraft" },
+    { modid="hexdoc" },
+]
+export_dir = "src/hexdoc_yaha/_export/generated"
+
+[template]
+icon = "icon.png"
+include = [
+    "yaha",
+    "hexcasting",
+    "hexdoc",
+]
+
+[template.args]
+mod_name = "Yet Another Hex Addon"
+author = "TheRobbie73"
+show_landing_text = false
+
+[extra.hexcasting]
+# regexes for parsing pattern registry files - if some or all of your patterns aren't being detected by hexdoc, this may need to be updated
+# NOTE: "!Raw" means "don't apply variable interpolation to this value"
+_pattern_regex = { "!Raw"='register\("(?P<name>[^"]+)"?,\sHexDir\.(?P<startdir>\w+),\s"(?P<signature>[qweasd]+)"' }
+
+[[extra.hexcasting.pattern_stubs]]
+path = "{$_project.src}/main/kotlin/org/robbie/yaha/registry/YahaActions.kt"
+regex = "{^_pattern_regex}"
+
+# source paths
+
+[_project]
+src = "../src"
